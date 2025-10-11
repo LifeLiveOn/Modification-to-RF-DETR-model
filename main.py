@@ -3,59 +3,63 @@ import numpy as np
 import cv2
 from pathlib import Path
 import matplotlib.pyplot as plt
+import torch
 from rfdetr import RFDETRBase
 import warnings
 from PIL import Image
+
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-def run_training():
-    model = RFDETRBase(num_classes=2)
-    resume_path = "merged_annotations/output/checkpoint.pth"
+def run_training(
+    num_classes: int = 1,
+    path_to_dataset: str = "merged_annotations",
+    resume_checkpoint: str | None = None,
+    output_dir: str = "merged_annotations/output"
+):
+    model = RFDETRBase(num_classes=num_classes)
+
+    # Resume path logic
+    resume_path = (
+        resume_checkpoint
+        if resume_checkpoint
+        else Path(output_dir) / "checkpoint.pth"
+    )
     if Path(resume_path).exists():
-        print(f"Resuming from {resume_path}")
+        print(f"✅ Resuming from {resume_path}")
     else:
+        print("🆕 Starting fresh training...")
         resume_path = None
 
     model.train(
-        dataset_dir="merged_annotations",
-        epochs=20,
-        batch_size=4,
+        dataset_dir=path_to_dataset,
+        epochs=30,
+        batch_size=8,
         grad_accum_steps=4,
         lr=1e-4,
         num_workers=0,
-        output_dir="merged_annotations/output",
+        output_dir=output_dir,
         tensorboard=True,
-        expanded_scales=True,
         resume=resume_path,
-        balance_annotated_unannotated=True,
+        seed=42,
+        early_stopping=True,
+        early_stopping_patience=10,
+        gradient_checkpointing=True,
     )
 
 
-def run_rfdetr_inference(checkpoint_path: str, image_path: str, class_names=None, save_dir="saved_predictions"):
-    """
-    Run RF-DETR inference on one image and save visualization using supervision.
-    """
-    ckpt = Path(checkpoint_path)
-    if not ckpt.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {ckpt}")
-
-    print(f"Loading model from {ckpt}")
-    model = RFDETRBase(num_classes=len(class_names)
-                       if class_names else 1, pretrain_weights=str(ckpt))
-    # model.optimize_for_inference()
-
-    # Load image
+def run_rfdetr_inference(model, image_path: str, class_names=None, save_dir="saved_predictions"):
+    """Run RF-DETR inference on one image and save visualization using supervision."""
     image = Image.open(image_path)
 
-    # Run prediction
-    detections = model.predict(image, threshold=0.5)
+    detections = model.predict(image, threshold=0.35)
+    print("Class IDs:", detections.class_id)
+    print("Confidences:", detections.confidence)
+    print("Boxes:", detections.xyxy if hasattr(detections, "xyxy") else None)
 
-    # Default label names
     if class_names is None:
         class_names = ["damage"]
 
-    # Build labels
     labels = []
     for class_id, confidence in zip(detections.class_id, detections.confidence):
         if class_id < len(class_names):
@@ -64,33 +68,62 @@ def run_rfdetr_inference(checkpoint_path: str, image_path: str, class_names=None
             label = f"Unknown({class_id}) {confidence:.2f}"
         labels.append(label)
 
-    # Annotate with supervision
     box_annotator = sv.BoxAnnotator()
     label_annotator = sv.LabelAnnotator()
-
     annotated = box_annotator.annotate(image.copy(), detections)
     annotated = label_annotator.annotate(annotated, detections, labels)
 
-    # Save output
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     save_path = save_dir / f"{Path(image_path).stem}_pred.jpg"
     annotated.save(save_path)
-
     print(f"Saved annotated image to: {save_path}")
+
     return detections, str(save_path)
 
 
 if __name__ == "__main__":
     import multiprocessing
-    multiprocessing.freeze_support()  # required for Windows
-    # run_training()
+    import argparse
 
-    run_training()
-    # test_img_path = "tiles_sample/images/DJI_0007size12391882_jpg.rf.9cb167f97e5a37e7602f96810c25f224_x1152_y576.jpg"
-    # run_rfdetr_inference(
-    #     checkpoint_path="ds2/output/checkpoint.pth",
-    #     image_path=test_img_path,
-    #     class_names=["wind_damage", "hail_damage"],
-    #     save_dir="ds2/saved_predictions"
-    # )
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--mode', type=str, choices=['train', 'test'], default='test', help='Mode: train or test'
+    )
+    args = parser.parse_args()
+    mode = args.mode
+
+    multiprocessing.freeze_support()  # required for Windows
+
+    class_names = ["hail"]
+    if mode == "train":
+        checkpoint_path = "merged_annotations/output/checkpoint.pth"
+        # HAIL ONLY training
+
+        num_classes = len(class_names)
+        run_training(
+            num_classes=num_classes,
+            path_to_dataset="merged_annotations",
+            # or "merged_annotations/output/checkpoint.pth" if continuing
+            resume_checkpoint=checkpoint_path,
+            output_dir="merged_annotations/output"
+        )
+    else:
+        # === Paths ===
+        test_folder_path = r"datasets/hail_2/test"
+        # === Inference ===
+        checkpoint_path = "merged_annotations/output/checkpoint_best_ema.pth"
+        model = RFDETRBase(
+            num_classes=len(class_names),
+            pretrain_weights=checkpoint_path
+        )
+
+        for img in Path(test_folder_path).glob("*.*"):
+            if img.suffix.lower() not in [".jpg", ".jpeg", ".png"]:
+                continue
+            run_rfdetr_inference(
+                model=model,
+                image_path=str(img),
+                class_names=class_names,
+                save_dir="run/saved_predictions/hail_2"
+            )

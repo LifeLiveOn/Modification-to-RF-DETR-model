@@ -1,3 +1,5 @@
+import numpy as np
+from collections import Counter, defaultdict
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -25,3 +27,19 @@ missing = [img["file_name"]
 
 print(f"Missing {len(missing)} / {len(data['images'])} image files")
 print("Example missing paths:", missing[:5])
+
+
+with open("merged_annotations/train/_annotations.coco.json") as f:
+    data = json.load(f)
+
+counts = Counter(ann["category_id"] for ann in data["annotations"])
+print("Category distribution:", counts)
+
+
+hail1 = list(Path("datasets/hail_1_cropped/train").glob("*.jpg"))
+hail2 = list(Path("datasets/hail_2/train").glob("*.jpg"))
+print("hail_1:", len(hail1), "hail_2:", len(hail2))
+
+
+areas = [a["bbox"][2]*a["bbox"][3] for a in data["annotations"]]
+print("Median bbox area:", np.median(areas))

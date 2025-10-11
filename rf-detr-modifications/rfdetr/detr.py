@@ -39,6 +39,8 @@ from rfdetr.util.metrics import MetricsPlotSink, MetricsTensorBoardSink, Metrics
 from rfdetr.util.coco_classes import COCO_CLASSES
 
 logger = getLogger(__name__)
+
+
 class RFDETR:
     """
     The base RF-DETR class implements the core methods for training RF-DETR models,
@@ -81,7 +83,7 @@ class RFDETR:
         """
         config = self.get_train_config(**kwargs)
         self.train_from_config(config, **kwargs)
-    
+
     def optimize_for_inference(self, compile=True, batch_size=1, dtype=torch.float32):
         self.remove_optimized_model()
 
@@ -99,14 +101,14 @@ class RFDETR:
             self.model.inference_model = torch.jit.trace(
                 self.model.inference_model,
                 torch.randn(
-                    batch_size, 3, self.model.resolution, self.model.resolution, 
+                    batch_size, 3, self.model.resolution, self.model.resolution,
                     device=self.model.device,
                     dtype=dtype
                 )
             )
             self._optimized_has_been_compiled = True
             self._optimized_batch_size = batch_size
-    
+
     def remove_optimized_model(self):
         self.model.inference_model = None
         self._is_optimized_for_inference = False
@@ -114,7 +116,7 @@ class RFDETR:
         self._optimized_batch_size = None
         self._optimized_resolution = None
         self._optimized_half = False
-    
+
     def export(self, **kwargs):
         """
         Export your model to an ONNX file.
@@ -126,11 +128,13 @@ class RFDETR:
     def train_from_config(self, config: TrainConfig, **kwargs):
         if config.dataset_file == "roboflow":
             with open(
-                os.path.join(config.dataset_dir, "train", "_annotations.coco.json"), "r"
+                os.path.join(config.dataset_dir, "train",
+                             "_annotations.coco.json"), "r"
             ) as f:
                 anns = json.load(f)
                 num_classes = len(anns["categories"])
-                class_names = [c["name"] for c in anns["categories"] if c["supercategory"] != "none"]
+                class_names = [c["name"] for c in anns["categories"]
+                               if c["supercategory"] != "none"]
                 self.model.class_names = class_names
         elif config.dataset_file == "coco":
             class_names = COCO_CLASSES
@@ -140,13 +144,13 @@ class RFDETR:
 
         if self.model_config.num_classes != num_classes:
             self.model.reinitialize_detection_head(num_classes)
-        
+
         train_config = config.dict()
         model_config = self.model_config.dict()
         model_config.pop("num_classes")
         if "class_names" in model_config:
             model_config.pop("class_names")
-        
+
         if "class_names" in train_config and train_config["class_names"] is None:
             train_config["class_names"] = class_names
 
@@ -155,17 +159,21 @@ class RFDETR:
                 model_config.pop(k)
             if k in kwargs:
                 kwargs.pop(k)
-        
-        all_kwargs = {**model_config, **train_config, **kwargs, "num_classes": num_classes}
+
+        all_kwargs = {**model_config, **train_config,
+                      **kwargs, "num_classes": num_classes}
 
         metrics_plot_sink = MetricsPlotSink(output_dir=config.output_dir)
         self.callbacks["on_fit_epoch_end"].append(metrics_plot_sink.update)
         self.callbacks["on_train_end"].append(metrics_plot_sink.save)
 
         if config.tensorboard:
-            metrics_tensor_board_sink = MetricsTensorBoardSink(output_dir=config.output_dir)
-            self.callbacks["on_fit_epoch_end"].append(metrics_tensor_board_sink.update)
-            self.callbacks["on_train_end"].append(metrics_tensor_board_sink.close)
+            metrics_tensor_board_sink = MetricsTensorBoardSink(
+                output_dir=config.output_dir)
+            self.callbacks["on_fit_epoch_end"].append(
+                metrics_tensor_board_sink.update)
+            self.callbacks["on_train_end"].append(
+                metrics_tensor_board_sink.close)
 
         if config.wandb:
             metrics_wandb_sink = MetricsWandBSink(
@@ -174,7 +182,8 @@ class RFDETR:
                 run=config.run,
                 config=config.model_dump()
             )
-            self.callbacks["on_fit_epoch_end"].append(metrics_wandb_sink.update)
+            self.callbacks["on_fit_epoch_end"].append(
+                metrics_wandb_sink.update)
             self.callbacks["on_train_end"].append(metrics_wandb_sink.close)
 
         if config.early_stopping:
@@ -186,7 +195,8 @@ class RFDETR:
                 use_ema=config.early_stopping_use_ema,
                 segmentation_head=config.segmentation_head
             )
-            self.callbacks["on_fit_epoch_end"].append(early_stopping_callback.update)
+            self.callbacks["on_fit_epoch_end"].append(
+                early_stopping_callback.update)
 
         self.model.train(
             **all_kwargs,
@@ -204,7 +214,7 @@ class RFDETR:
         Retrieve a model instance based on the provided configuration.
         """
         return Model(**config.dict())
-    
+
     # Get class_names from the model
     @property
     def class_names(self):
@@ -216,7 +226,7 @@ class RFDETR:
         """
         if hasattr(self.model, 'class_names') and self.model.class_names:
             return {i+1: name for i, name in enumerate(self.model.class_names)}
-            
+
         return COCO_CLASSES
 
     def predict(
@@ -270,7 +280,7 @@ class RFDETR:
 
             if not isinstance(img, torch.Tensor):
                 img = F.to_tensor(img)
-            
+
             if (img > 1).any():
                 raise ValueError(
                     "Image has pixel values above 1. Please ensure the image is "
@@ -282,13 +292,14 @@ class RFDETR:
                     f"{img.shape[0]} channels."
                 )
             img_tensor = img
-            
+
             h, w = img_tensor.shape[1:]
             orig_sizes.append((h, w))
 
             img_tensor = img_tensor.to(self.model.device)
             img_tensor = F.normalize(img_tensor, self.means, self.stds)
-            img_tensor = F.resize(img_tensor, (self.model.resolution, self.model.resolution))
+            img_tensor = F.resize(
+                img_tensor, (self.model.resolution, self.model.resolution))
 
             processed_images.append(img_tensor)
 
@@ -312,17 +323,21 @@ class RFDETR:
 
         with torch.inference_mode():
             if self._is_optimized_for_inference:
-                predictions = self.model.inference_model(batch_tensor.to(dtype=self._optimized_dtype))
+                predictions = self.model.inference_model(
+                    batch_tensor.to(dtype=self._optimized_dtype))
             else:
                 predictions = self.model.model(batch_tensor)
             if isinstance(predictions, tuple):
                 predictions = {
                     "pred_logits": predictions[1],
                     "pred_boxes": predictions[0],
-                    "pred_masks": predictions[2]
+                    # "pred_masks": predictions[2]
                 }
+                if len(predictions) == 3:
+                    predictions["pred_masks"] = predictions[2]
             target_sizes = torch.tensor(orig_sizes, device=self.model.device)
-            results = self.model.postprocess(predictions, target_sizes=target_sizes)
+            results = self.model.postprocess(
+                predictions, target_sizes=target_sizes)
 
         detections_list = []
         for result in results:
@@ -355,7 +370,7 @@ class RFDETR:
             detections_list.append(detections)
 
         return detections_list if len(detections_list) > 1 else detections_list[0]
-    
+
     def deploy_to_roboflow(self, workspace: str, project_id: str, version: str, api_key: str = None, size: str = None):
         """
         Deploy the trained RF-DETR model to Roboflow.
@@ -382,8 +397,8 @@ class RFDETR:
         if api_key is None:
             api_key = os.getenv("ROBOFLOW_API_KEY")
             if api_key is None:
-                raise ValueError("Set api_key=<KEY> in deploy_to_roboflow or export ROBOFLOW_API_KEY=<KEY>")
-
+                raise ValueError(
+                    "Set api_key=<KEY> in deploy_to_roboflow or export ROBOFLOW_API_KEY=<KEY>")
 
         rf = Roboflow(api_key=api_key)
         workspace = rf.workspace(workspace)
@@ -411,64 +426,74 @@ class RFDETR:
         shutil.rmtree(tmp_out_dir)
 
 
-
 class RFDETRBase(RFDETR):
     """
     Train an RF-DETR Base model (29M parameters).
     """
     size = "rfdetr-base"
+
     def get_model_config(self, **kwargs):
         return RFDETRBaseConfig(**kwargs)
 
     def get_train_config(self, **kwargs):
         return TrainConfig(**kwargs)
 
+
 class RFDETRLarge(RFDETR):
     """
     Train an RF-DETR Large model.
     """
     size = "rfdetr-large"
+
     def get_model_config(self, **kwargs):
         return RFDETRLargeConfig(**kwargs)
 
     def get_train_config(self, **kwargs):
         return TrainConfig(**kwargs)
 
+
 class RFDETRNano(RFDETR):
     """
     Train an RF-DETR Nano model.
     """
     size = "rfdetr-nano"
+
     def get_model_config(self, **kwargs):
         return RFDETRNanoConfig(**kwargs)
 
     def get_train_config(self, **kwargs):
         return TrainConfig(**kwargs)
 
+
 class RFDETRSmall(RFDETR):
     """
     Train an RF-DETR Small model.
     """
     size = "rfdetr-small"
+
     def get_model_config(self, **kwargs):
         return RFDETRSmallConfig(**kwargs)
 
     def get_train_config(self, **kwargs):
         return TrainConfig(**kwargs)
 
+
 class RFDETRMedium(RFDETR):
     """
     Train an RF-DETR Medium model.
     """
     size = "rfdetr-medium"
+
     def get_model_config(self, **kwargs):
         return RFDETRMediumConfig(**kwargs)
 
     def get_train_config(self, **kwargs):
         return TrainConfig(**kwargs)
 
+
 class RFDETRSegPreview(RFDETR):
     size = "rfdetr-seg-preview"
+
     def get_model_config(self, **kwargs):
         return RFDETRSegPreviewConfig(**kwargs)
 

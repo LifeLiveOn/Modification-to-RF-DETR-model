@@ -66,7 +66,14 @@ checkpoints/
 experiments/
 wandb/
 results/
-rf-detr*
+
+# Ignore model export folders, but keep code repo
+rf-detr/
+rf-detr-checkpoints/
+rf-detr-outputs/
+rf-detr-results/
+# Do NOT ignore your working dev folder
+!rf-detr-modifications/
 
 # =========================
 # Datasets / Generated Data

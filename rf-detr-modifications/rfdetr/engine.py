@@ -248,14 +248,27 @@ def evaluate(model, criterion, postprocess, data_loader, base_ds, device, args=N
 
     pbar.close()
 
+    # Finish evaluation and collect metrics
     coco_evaluator.synchronize_between_processes()
     coco_evaluator.accumulate()
     coco_evaluator.summarize()
 
-    # Extract COCO stats (so 'coco_eval_bbox' exists)
+    # Prepare return stats
     stats = {"val_loss": total_loss / len(data_loader)}
+
+    # Extract metrics safely
     if "bbox" in coco_evaluator.coco_eval:
-        stats["coco_eval_bbox"] = coco_evaluator.coco_eval["bbox"].stats.tolist()
+        coco_eval = coco_evaluator.coco_eval["bbox"]
+        stats["coco_eval_bbox"] = coco_eval.stats.tolist()
+        # optional: generate additional metrics
+        extended = coco_extended_metrics(coco_eval)
+        stats.update({
+            "map_regular": extended["map"],
+            "precision": extended["precision"],
+            "recall": extended["recall"],
+            # compatible with older RF-DETR
+            "results_json": {"class_map": extended["class_map"]},
+        })
     if "segm" in coco_evaluator.coco_eval:
         stats["coco_eval_masks"] = coco_evaluator.coco_eval["segm"].stats.tolist()
 

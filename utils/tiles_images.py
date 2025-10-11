@@ -25,8 +25,14 @@ def slice_single_image(
     visualize=False,
     black_threshold=15,
     output_dir="tiles/",
-    data_type="train"
+    data_type="train",
+    area_threshold=15*15,
+    edge_threshold=3,
+    context_margin=0.2,
+    **kwargs
 ):
+    from shapely.geometry import box as shapely_box
+
     image = Image.open(image_path).convert("RGB")
     w, h = image.size
     step = int(tile_size * (1 - overlap))
@@ -45,8 +51,7 @@ def slice_single_image(
         for x0 in range(0, w, step):
             x1, y1 = x0 + tile_size, y0 + tile_size
             if x1 > w or y1 > h:
-                # skip tiles exceeding bounds (avoid black padding)
-                continue
+                continue  # skip tiles exceeding image bounds
 
             tile = image.crop((x0, y0, x1, y1))
             gray = np.array(tile.convert("L"))
@@ -57,22 +62,37 @@ def slice_single_image(
 
             has_box = False
             tile_filename = f"{Path(image_path).stem}_x{x0}_y{y0}.jpg"
+            slice_box = shapely_box(x0, y0, x1, y1)
+
+            tile_annotations = []
 
             for ann in anns:
-                x, y, bw, bh = ann["bbox"]
-                x2, y2 = x + bw, y + bh
-                if x2 < x0 or y2 < y0 or x > x1 or y > y1:
+                bx, by, bw, bh = ann["bbox"]
+                bx2, by2 = bx + bw, by + bh
+                ann_box = shapely_box(bx, by, bx2, by2)
+
+                # Check intersection
+                inter = ann_box.intersection(slice_box)
+                if inter.is_empty:
                     continue
 
-                new_x, new_y = max(x - x0, 0), max(y - y0, 0)
-                new_x2, new_y2 = min(
-                    x2 - x0, tile_size), min(y2 - y0, tile_size)
-                new_w, new_h = new_x2 - new_x, new_y2 - new_y
+                ixmin, iymin, ixmax, iymax = inter.bounds
+                new_x, new_y = ixmin - x0, iymin - y0
+                new_w, new_h = ixmax - ixmin, iymax - iymin
+
                 if new_w <= 1 or new_h <= 1:
                     continue
 
+                # skip tiny boxes (area-based)
+                if new_w * new_h < area_threshold:
+                    continue
+
+                # skip edge bboxes
+                if new_x <= edge_threshold or new_y <= edge_threshold or new_x + new_w >= tile_size - edge_threshold or new_y + new_h >= tile_size - edge_threshold:
+                    continue
+
                 has_box = True
-                new_annotations.append({
+                tile_annotations.append({
                     "id": ann_id,
                     "image_id": img_id,
                     "category_id": ann["category_id"],
@@ -83,12 +103,80 @@ def slice_single_image(
                 })
                 ann_id += 1
 
-            if has_box:
+                # ================= SMART ZOOM LOGIC =================
+            if has_box and len(tile_annotations) > 0:
+                bboxes = np.array([a["bbox"] for a in tile_annotations])
+                # Compute cluster area (only for boxes not at tile edges)
+                x_min = bboxes[:, 0].min()
+                y_min = bboxes[:, 1].min()
+                x_max = (bboxes[:, 0] + bboxes[:, 2]).max()
+                y_max = (bboxes[:, 1] + bboxes[:, 3]).max()
+
+                # Add 20% context margin
+                margin_x = (x_max - x_min) * context_margin
+                margin_y = (y_max - y_min) * context_margin
+                crop_x0 = max(0, x_min - margin_x)
+                crop_y0 = max(0, y_min - margin_y)
+                crop_x1 = min(tile_size, x_max + margin_x)
+                crop_y1 = min(tile_size, y_max + margin_y)
+
+                crop_w = crop_x1 - crop_x0
+                crop_h = crop_y1 - crop_y0
+
+                # Ensure minimum zoom area (avoid excessive zoom)
+                min_zoom = 256
+                if crop_w < min_zoom or crop_h < min_zoom:
+                    cx = (crop_x0 + crop_x1) / 2
+                    cy = (crop_y0 + crop_y1) / 2
+                    crop_w = max(crop_w, min_zoom)
+                    crop_h = max(crop_h, min_zoom)
+                    crop_x0 = max(0, cx - crop_w / 2)
+                    crop_y0 = max(0, cy - crop_h / 2)
+                    crop_x1 = min(tile_size, crop_x0 + crop_w)
+                    crop_y1 = min(tile_size, crop_y0 + crop_h)
+
+                crop_box = (int(crop_x0), int(crop_y0),
+                            int(crop_x1), int(crop_y1))
+                crop_w, crop_h = crop_x1 - crop_x0, crop_y1 - crop_y0
+
+                # Apply zoom crop
+                zoom_tile = tile.crop(crop_box).resize(
+                    (tile_size, tile_size), Image.LANCZOS)
+                scale_x = tile_size / crop_w
+                scale_y = tile_size / crop_h
+
+                # Adjust annotations
+                zoom_annotations = []
+                for a in tile_annotations:
+                    x, y, w_, h_ = a["bbox"]
+                    # Skip boxes outside the crop area
+                    if x + w_ < crop_x0 or y + h_ < crop_y0 or x > crop_x1 or y > crop_y1:
+                        continue
+                    nx = (x - crop_x0) * scale_x
+                    ny = (y - crop_y0) * scale_y
+                    nw = w_ * scale_x
+                    nh = h_ * scale_y
+                    zoom_annotations.append({
+                        "id": a["id"],
+                        "image_id": img_id,
+                        "category_id": a["category_id"],
+                        "bbox": [nx, ny, nw, nh],
+                        "area": nw * nh,
+                        "iscrowd": a.get("iscrowd", 0),
+                        "segmentation": []
+                    })
+
+                tile = zoom_tile
+                tile_annotations = zoom_annotations
+            # =====================================================
+
+            if has_box and len(tile_annotations) > 0:
                 tile.save(os.path.join(img_out_dir, tile_filename))
+
                 if visualize and vis_out_dir:
                     vis_tile = tile.copy()
                     draw = ImageDraw.Draw(vis_tile)
-                    for a in new_annotations[-len(anns):]:
+                    for a in tile_annotations:
                         draw.rectangle(
                             [a["bbox"][0], a["bbox"][1],
                              a["bbox"][0] + a["bbox"][2],
@@ -103,6 +191,7 @@ def slice_single_image(
                     "width": tile_size,
                     "height": tile_size
                 })
+                new_annotations.extend(tile_annotations)
                 img_id += 1
 
     return new_images, new_annotations, ann_id, img_id
@@ -115,7 +204,10 @@ def slice_folder_images(
     tile_size=640,
     overlap=0.0,
     visualize=False,
-    data_type="train"
+    data_type="train",
+    black_threshold=15,
+    area_threshold=15*15,
+    edge_threshold=3, **kwargs
 ):
     os.makedirs(output_dir, exist_ok=True)
 
@@ -143,7 +235,10 @@ def slice_folder_images(
         new_imgs, new_anns, next_ann_id, next_img_id = slice_single_image(
             image_path, anns, next_ann_id, next_img_id,
             tile_size=tile_size, overlap=overlap,
-            visualize=visualize, output_dir=output_dir, data_type=data_type
+            visualize=visualize, output_dir=output_dir,
+            data_type=data_type, black_threshold=black_threshold,
+            area_threshold=area_threshold, edge_threshold=edge_threshold, context_margin=kwargs.get(
+                "context_margin", 0.2)
         )
 
         all_new_images.extend(new_imgs)
@@ -164,13 +259,19 @@ def slice_folder_images(
 
 
 if __name__ == "__main__":
+    folder = "datasets/hail_1"
+
     for dt in ["train", "valid", "test"]:
         slice_folder_images(
-            image_dir=f"datasets/hail_1/{dt}/",
-            anno_path=f"datasets/hail_1/{dt}/_annotations.coco.json",
-            output_dir="datasets/hail_1_cropped/",
+            image_dir=f"{folder}/{dt}/",
+            anno_path=f"{folder}/{dt}/_annotations.coco.json",
+            output_dir=f"{folder}_cropped/",
             tile_size=640,
-            overlap=0.2,
+            overlap=0,
             visualize=True,
-            data_type=dt
+            data_type=dt,
+            black_threshold=15,
+            area_threshold=20*20,
+            edge_threshold=5,
+            context_margin=0.4  # zoom crop margin (0.4 = 40%
         )
