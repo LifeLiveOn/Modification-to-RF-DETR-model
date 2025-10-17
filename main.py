@@ -11,6 +11,9 @@ from PIL import Image
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
+# ================================================================
+#                      TRAINING FUNCTION
+# ================================================================
 def run_training(
     num_classes: int = 1,
     path_to_dataset: str = "merged_annotations",
@@ -26,15 +29,15 @@ def run_training(
         else Path(output_dir) / "checkpoint.pth"
     )
     if Path(resume_path).exists():
-        print(f"✅ Resuming from {resume_path}")
+        print(f"Resuming from {resume_path}")
     else:
-        print("🆕 Starting fresh training...")
+        print("Starting fresh training...")
         resume_path = None
 
     model.train(
         dataset_dir=path_to_dataset,
-        epochs=30,
-        batch_size=8,
+        epochs=100,
+        batch_size=4,
         grad_accum_steps=4,
         lr=1e-4,
         num_workers=0,
@@ -48,6 +51,9 @@ def run_training(
     )
 
 
+# ================================================================
+#                      NORMAL INFERENCE
+# ================================================================
 def run_rfdetr_inference(model, image_path: str, class_names=None, save_dir="saved_predictions"):
     """Run RF-DETR inference on one image and save visualization using supervision."""
     image = Image.open(image_path)
@@ -82,36 +88,138 @@ def run_rfdetr_inference(model, image_path: str, class_names=None, save_dir="sav
     return detections, str(save_path)
 
 
+# ================================================================
+#                      SAHI-STYLE INFERENCE
+# ================================================================
+def run_rfdetr_inference_tiled(
+    model,
+    image_path: str,
+    class_names=None,
+    tile_size=640,
+    overlap=0.2,
+    conf_thres=0.35,
+    save_dir="saved_predictions_tiled"
+):
+    """Run tiled (SAHI-style) inference for RF-DETR."""
+    from shapely.geometry import box as shapely_box
+    import numpy as np
+
+    image = Image.open(image_path).convert("RGB")
+    w, h = image.size
+    detections_all = []
+
+    step = int(tile_size * (1 - overlap))
+    for y0 in range(0, h, step):
+        for x0 in range(0, w, step):
+            x1, y1 = x0 + tile_size, y0 + tile_size
+            if x1 > w or y1 > h:
+                continue
+
+            tile = image.crop((x0, y0, x1, y1))
+            detections = model.predict(tile, threshold=conf_thres)
+
+            if detections is None or len(detections.class_id) == 0:
+                continue
+
+            for i in range(len(detections.class_id)):
+                x_min, y_min, x_max, y_max = detections.xyxy[i]
+                score = detections.confidence[i]
+                cls = detections.class_id[i]
+                detections_all.append([
+                    x_min + x0, y_min + y0, x_max + x0, y_max + y0, score, cls
+                ])
+
+    if len(detections_all) == 0:
+        print("No detections found.")
+        return None, None
+
+    # NMS merging
+    detections_all = np.array(detections_all)
+    boxes, scores, cls = detections_all[:,
+                                        :4], detections_all[:, 4], detections_all[:, 5]
+    keep = nms(boxes, scores, iou_thres=0.5)
+    final_dets = detections_all[keep]
+
+    # Visualization
+    dets_xyxy = sv.Detections(
+        xyxy=final_dets[:, :4],
+        confidence=final_dets[:, 4],
+        class_id=final_dets[:, 5].astype(int)
+    )
+
+    if class_names is None:
+        class_names = ["damage"]
+
+    labels = [f"{class_names[int(c)]} {s:.2f}" for c, s in zip(
+        dets_xyxy.class_id, dets_xyxy.confidence)]
+    box_annotator = sv.BoxAnnotator()
+    label_annotator = sv.LabelAnnotator()
+    annotated = box_annotator.annotate(image.copy(), dets_xyxy)
+    annotated = label_annotator.annotate(annotated, dets_xyxy, labels)
+
+    Path(save_dir).mkdir(parents=True, exist_ok=True)
+    save_path = Path(save_dir) / f"{Path(image_path).stem}_tiled_pred.jpg"
+    annotated.save(save_path)
+    print(f"Saved tiled annotated image to: {save_path}")
+
+    return dets_xyxy, str(save_path)
+
+
+def nms(boxes, scores, iou_thres=0.5):
+    """Simple NMS."""
+    x1, y1, x2, y2 = boxes.T
+    areas = (x2 - x1) * (y2 - y1)
+    order = scores.argsort()[::-1]
+    keep = []
+    while order.size > 0:
+        i = order[0]
+        keep.append(i)
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+        w = np.maximum(0, xx2 - xx1)
+        h = np.maximum(0, yy2 - yy1)
+        inter = w * h
+        iou = inter / (areas[i] + areas[order[1:]] - inter)
+        inds = np.where(iou <= iou_thres)[0]
+        order = order[inds + 1]
+    return keep
+
+
+# ================================================================
+#                      MAIN SCRIPT
+# ================================================================
 if __name__ == "__main__":
     import multiprocessing
     import argparse
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--mode', type=str, choices=['train', 'test'], default='test', help='Mode: train or test'
-    )
+        '--mode', type=str, choices=['train', 'test'], default='test', help='Mode: train or test')
+    parser.add_argument('--infer_mode', type=str, choices=['normal', 'tiled'], default='normal',
+                        help='Inference mode: normal or tiled (SAHI-style)')
     args = parser.parse_args()
     mode = args.mode
+    infer_mode = args.infer_mode
 
     multiprocessing.freeze_support()  # required for Windows
 
     class_names = ["hail"]
+
     if mode == "train":
         checkpoint_path = "merged_annotations/output/checkpoint.pth"
-        # HAIL ONLY training
-
         num_classes = len(class_names)
         run_training(
             num_classes=num_classes,
             path_to_dataset="merged_annotations",
-            # or "merged_annotations/output/checkpoint.pth" if continuing
             resume_checkpoint=checkpoint_path,
             output_dir="merged_annotations/output"
         )
+
     else:
         # === Paths ===
-        test_folder_path = r"datasets/hail_2/test"
-        # === Inference ===
+        test_folder_path = r"datasets/single_test"
         checkpoint_path = "merged_annotations/output/checkpoint_best_ema.pth"
         model = RFDETRBase(
             num_classes=len(class_names),
@@ -121,9 +229,26 @@ if __name__ == "__main__":
         for img in Path(test_folder_path).glob("*.*"):
             if img.suffix.lower() not in [".jpg", ".jpeg", ".png"]:
                 continue
-            run_rfdetr_inference(
-                model=model,
-                image_path=str(img),
-                class_names=class_names,
-                save_dir="run/saved_predictions/hail_2"
-            )
+
+            if infer_mode == "normal":
+                run_rfdetr_inference(
+                    model=model,
+                    image_path=str(img),
+                    class_names=class_names,
+                    save_dir=f"run/{test_folder_path.split('/')[-1]}_predictions"
+                )
+            else:
+                run_rfdetr_inference_tiled(
+                    model=model,
+                    image_path=str(img),
+                    class_names=class_names,
+                    tile_size=640,
+                    overlap=0.2,
+                    conf_thres=0.35,
+                    save_dir=f"run/{test_folder_path.split('/')[-1]}_predictions_tiled"
+                )
+
+# usage :
+# python main.py --mode test --infer_mode normal
+# python main.py --mode test --infer_mode tiled
+# python main.py --mode train
