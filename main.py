@@ -109,24 +109,32 @@ def run_rfdetr_inference_tiled(
     detections_all = []
 
     step = int(tile_size * (1 - overlap))
+    # Slide over the image
     for y0 in range(0, h, step):
         for x0 in range(0, w, step):
             x1, y1 = x0 + tile_size, y0 + tile_size
+            # skip if out of bounds
             if x1 > w or y1 > h:
                 continue
-
+            # crop tile to detect on that single title
             tile = image.crop((x0, y0, x1, y1))
+            tile = tile.resize((640, 640), Image.LANCZOS)
             detections = model.predict(tile, threshold=conf_thres)
 
             if detections is None or len(detections.class_id) == 0:
                 continue
-
+            # regular boxes to global image boxes, adjusting coordinate if title start at (x0, y0) detection only inside it so we have to add x0, y0 more to represent global image
             for i in range(len(detections.class_id)):
-                x_min, y_min, x_max, y_max = detections.xyxy[i]
+                scale_x = (x1 - x0) / 640
+                scale_y = (y1 - y0) / 640
+                x_min = detections.xyxy[i][0] * scale_x + x0
+                y_min = detections.xyxy[i][1] * scale_y + y0
+                x_max = detections.xyxy[i][2] * scale_x + x0
+                y_max = detections.xyxy[i][3] * scale_y + y0
                 score = detections.confidence[i]
                 cls = detections.class_id[i]
                 detections_all.append([
-                    x_min + x0, y_min + y0, x_max + x0, y_max + y0, score, cls
+                    x_min, y_min, x_max, y_max, score, cls
                 ])
 
     if len(detections_all) == 0:
@@ -135,8 +143,10 @@ def run_rfdetr_inference_tiled(
 
     # NMS merging
     detections_all = np.array(detections_all)
-    boxes, scores, cls = detections_all[:,
-                                        :4], detections_all[:, 4], detections_all[:, 5]
+    # each detection_all: [x_min, y_min, x_max, y_max, score, class_id]
+    boxes = detections_all[:, :4]  # all rows, first 4 columns
+    scores = detections_all[:, 4]  # all rows, 5th column
+    cls = detections_all[:, 5]  # all rows, 6th column
     keep = nms(boxes, scores, iou_thres=0.5)
     final_dets = detections_all[keep]
 
@@ -167,7 +177,7 @@ def run_rfdetr_inference_tiled(
 
 def nms(boxes, scores, iou_thres=0.5):
     """Simple NMS."""
-    x1, y1, x2, y2 = boxes.T
+    x1, y1, x2, y2 = boxes.T  # flip the numpy array so now we have all x1, y1, x2, y2 in separate arrays
     areas = (x2 - x1) * (y2 - y1)
     order = scores.argsort()[::-1]
     keep = []
@@ -197,11 +207,25 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--mode', type=str, choices=['train', 'test'], default='test', help='Mode: train or test')
-    parser.add_argument('--infer_mode', type=str, choices=['normal', 'tiled'], default='normal',
+    parser.add_argument('--infer_mode', type=str, choices=['normal', 'tiled'],
+                        default='normal',
                         help='Inference mode: normal or tiled (SAHI-style)')
+    parser.add_argument('--tile_size', type=str, choices=["tiny", "small", "normal", "large"], default="normal",
+                        help='Tile size for tiled inference')
     args = parser.parse_args()
     mode = args.mode
     infer_mode = args.infer_mode
+    tile_size = args.tile_size
+    if tile_size == "tiny":
+        tile_size = 320
+    elif tile_size == "small":
+        tile_size = 480
+    elif tile_size == "normal":
+        tile_size = 640
+    elif tile_size == "large":
+        tile_size = 800
+    else:
+        tile_size = 640
 
     multiprocessing.freeze_support()  # required for Windows
 
@@ -242,13 +266,13 @@ if __name__ == "__main__":
                     model=model,
                     image_path=str(img),
                     class_names=class_names,
-                    tile_size=640,
+                    tile_size=tile_size,
                     overlap=0.2,
-                    conf_thres=0.35,
+                    conf_thres=0.45,
                     save_dir=f"run/{test_folder_path.split('/')[-1]}_predictions_tiled"
                 )
 
 # usage :
 # python main.py --mode test --infer_mode normal
-# python main.py --mode test --infer_mode tiled
+# uv run main.py --mode test --infer_mode tiled --tile_size tiny or small or normal or large
 # python main.py --mode train
