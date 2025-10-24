@@ -79,6 +79,7 @@ rf-detr-results/
 # Datasets / Generated Data
 # =========================
 datasets/
+!*/datasets/
 tiles_dataset/
 data/
 cache/
