@@ -37,9 +37,9 @@ def run_training(
     model.train(
         dataset_dir=path_to_dataset,
         epochs=100,
-        batch_size=4,
+        batch_size=8,
         grad_accum_steps=4,
-        lr=1e-4,
+        lr=1e-5,
         num_workers=0,
         output_dir=output_dir,
         tensorboard=True,
@@ -58,7 +58,7 @@ def run_rfdetr_inference(model, image_path: str, class_names=None, save_dir="sav
     """Run RF-DETR inference on one image and save visualization using supervision."""
     image = Image.open(image_path)
 
-    detections = model.predict(image, threshold=0.35)
+    detections = model.predict(image, threshold=0.4)
     print("Class IDs:", detections.class_id)
     print("Confidences:", detections.confidence)
     print("Boxes:", detections.xyxy if hasattr(detections, "xyxy") else None)
@@ -212,6 +212,7 @@ if __name__ == "__main__":
                         help='Inference mode: normal or tiled (SAHI-style)')
     parser.add_argument('--tile_size', type=str, choices=["tiny", "small", "normal", "large"], default="normal",
                         help='Tile size for tiled inference')
+    parser.add_argument('--path', type=str, help='Path to test images folder')
     args = parser.parse_args()
     mode = args.mode
     infer_mode = args.infer_mode
@@ -229,7 +230,7 @@ if __name__ == "__main__":
 
     multiprocessing.freeze_support()  # required for Windows
 
-    class_names = ["hail"]
+    class_names = ["wind", "hail"]
 
     if mode == "train":
         checkpoint_path = "merged_annotations/output/checkpoint.pth"
@@ -243,7 +244,8 @@ if __name__ == "__main__":
 
     else:
         # === Paths ===
-        test_folder_path = r"datasets/single_test"
+        test_folder_path = args.path if args.path else "datasets/single_test"
+        print(f"Testing on images from: {test_folder_path}")
         checkpoint_path = "merged_annotations/output/checkpoint_best_ema.pth"
         model = RFDETRBase(
             num_classes=len(class_names),
@@ -259,7 +261,7 @@ if __name__ == "__main__":
                     model=model,
                     image_path=str(img),
                     class_names=class_names,
-                    save_dir=f"run/{test_folder_path.split('/')[-1]}_predictions"
+                    save_dir=f"run/{test_folder_path.split('/')[-2:]}_predictions"
                 )
             else:
                 run_rfdetr_inference_tiled(
@@ -269,10 +271,14 @@ if __name__ == "__main__":
                     tile_size=tile_size,
                     overlap=0.2,
                     conf_thres=0.45,
-                    save_dir=f"run/{test_folder_path.split('/')[-1]}_predictions_tiled"
+                    save_dir=f"run/{test_folder_path.split('/')[-2:]}_predictions_tiled"
                 )
 
 # usage :
 # python main.py --mode test --infer_mode normal
-# uv run main.py --mode test --infer_mode tiled --tile_size tiny or small or normal or large
+# tile side: tiny, small, normal, large
+# python main.py --mode test --infer_mode tiled --tile_size small --path datasets/hail_1/test
 # python main.py --mode train
+
+# test wind_1
+# python main.py --mode test --infer_mode normal --path datasets/wind_1/test

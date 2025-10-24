@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import List, Union
 
-    
+
 def merge_coco_datasets(
     json_list: Union[List[str], str],
     dataset_list: Union[List[str], str],
@@ -35,7 +35,8 @@ def merge_coco_datasets(
     if len(json_list) == 0:
         raise ValueError("At least one json file must be provided")
     if len(json_list) != len(dataset_list):
-        raise ValueError("The number of json files and dataset paths must match")
+        raise ValueError(
+            "The number of json files and dataset paths must match")
 
     # --- Load the first (base) dataset ---
     with open(json_list[0], "r") as f:
@@ -48,15 +49,20 @@ def merge_coco_datasets(
     }
 
     # --- Track max IDs using base dataset ---
-    max_img_id = max((img.get("id", 0) for img in base.get("images", [])), default=0)
-    max_ann_id = max((ann.get("id", 0) for ann in base.get("annotations", [])), default=0)
+    max_img_id = max((img.get("id", 0)
+                     for img in base.get("images", [])), default=0)
+    max_ann_id = max((ann.get("id", 0)
+                     for ann in base.get("annotations", [])), default=0)
 
     # --- Copy base dataset images and annotations, prefixing file_name ---
     for img in base.get("images", []):
-        new_img = img.copy() #copy the image dict
-        new_img["file_name"] = f"{dataset_list[0]}/{img['file_name']}".replace("\\", "/") #prefix and use / for windows compatibility
+        new_img = img.copy()  # copy the image dict
+        # prefix and use / for windows compatibility
+        new_img["file_name"] = f"{dataset_list[0]}/{img['file_name']}".replace(
+            "\\", "/")
         merged["images"].append(new_img)
-    merged["annotations"].extend(base.get("annotations", [])) # use the default annotations from base
+    # use the default annotations from base
+    merged["annotations"].extend(base.get("annotations", []))
 
     # --- Merge remaining datasets one-by-one ---
     for idx in range(1, len(json_list)):
@@ -72,19 +78,23 @@ def merge_coco_datasets(
             max_img_id += 1
             new_img = img.copy()
             new_img["id"] = max_img_id
-            new_img["file_name"] = f"{dataset_prefix}/{new_img['file_name']}".replace("\\", "/")
-            img_name_to_newid[img.get("file_name")] = new_img["id"] # map old name to new id so that annotations can be relinked
+            new_img["file_name"] = f"{dataset_prefix}/{new_img['file_name']}".replace(
+                "\\", "/")
+            # map old name to new id so that annotations can be relinked
+            img_name_to_newid[img.get("file_name")] = new_img["id"]
             merged["images"].append(new_img)
 
         # Relink and append annotations
         for ann in coco.get("annotations", []):
             # find corresponding old image by id in coco's image list
-            old_img = next((i for i in coco.get("images", []) if i.get("id") == ann.get("image_id")), None)
+            old_img = next((i for i in coco.get("images", [])
+                           if i.get("id") == ann.get("image_id")), None)
             # same as above is for i in coco.get("images", []) if i.get("id") == ann.get("image_id"): old_img = i; break
             if not old_img:
                 continue
             old_name = old_img.get("file_name")
-            new_img_id = img_name_to_newid.get(old_name) # get the new image id
+            new_img_id = img_name_to_newid.get(
+                old_name)  # get the new image id
             if not new_img_id:
                 continue
 
@@ -106,16 +116,16 @@ def merge_coco_datasets(
 
 
 if __name__ == "__main__":
-    list_json = [""]
-    datasets_path = [""]
-    output = "merged_annotations/all/_annotations.coco.json"
-    if list_json and datasets_path:
-        merge_coco_datasets(list_json, datasets_path, output)
-    else:
-        # Preserve original convenience behavior for three splits using two datasets
-        for split in ["train", "valid", "test"]:
-            merge_coco_datasets(
-                [f"datasets/hail_1_cropped/{split}/_annotations.coco.json", f"datasets/hail_2/{split}/_annotations.coco.json"],
-                [f"datasets/hail_1_cropped/{split}", f"datasets/hail_2/{split}"],
-                f"merged_annotations/{split}/_annotations.coco.json",
-            )
+    mode1 = ["train", "valid", "test"]
+    prefix = "datasets"
+    json_name = "_annotations.coco.json"
+    try:
+        for m in mode1:
+            list_json = [f"{prefix}/hail_1_cropped/{m}/{json_name}",
+                         f"{prefix}/hail_2/{m}/{json_name}", f"{prefix}/hail_3/{m}/{json_name}", f"{prefix}/wind_1/{m}/{json_name}"]
+            datasets_path = [f"{prefix}/hail_1_cropped/{m}",
+                             f"{prefix}/hail_2/{m}", f"{prefix}/hail_3/{m}", f"{prefix}/wind_1/{m}"]
+            output = f"merged_annotations/{m}/_annotations.coco.json"
+            merge_coco_datasets(list_json, datasets_path, output)
+    except Exception as e:
+        raise ValueError("No json files or dataset paths provided.") from e
