@@ -86,7 +86,10 @@ cache/
 tmp/
 *.csv
 *.jsonl
-*.onnx
+
+### =========================
+# ONNX Models
+exported_models/*.onnx
 # =========================
 # Images / Visualizations
 # =========================
