@@ -17,41 +17,21 @@ cd Modification-to-RF-DETR-model
 **On Windows:**
 pip install uv
 
-graphql
-Copy code
-
 **On Linux:**
 curl -LsSf https://astral.sh/uv/install.sh | sh
-
-shell
-Copy code
 
 ### Set up a Python 3.10 virtual environment
 
 uv venv --python 3.10
 
-shell
-Copy code
-
 ### Install dependencies
 
 uv pip install -r requirements.txt
-
-nginx
-Copy code
-or equivalently
-uv add -r requirements.txt
-
-graphql
-Copy code
 
 ### Install local RF-DETR modifications
 
 cd rf-detr-modifications
 uv pip install -e .
-
-yaml
-Copy code
 
 ---
 
@@ -59,9 +39,6 @@ Copy code
 
 From the project root, launch the Streamlit demo:
 streamlit run app.py
-
-yaml
-Copy code
 
 ---
 
@@ -94,26 +71,14 @@ Copy code
 **Inference (normal mode):**
 python main.py --mode test --infer_mode normal --tile_size small
 
-markdown
-Copy code
-
 **Inference (tiled mode):**
 python main.py --mode test --infer_mode tiled --tile_size small --path datasets/hail_1/test
-
-makefile
-Copy code
 
 **Training:**
 python main.py --mode train
 
-csharp
-Copy code
-
 **Test on wind damage dataset:**
 python main.py --mode test --infer_mode normal --path datasets/wind_1/test
-
-yaml
-Copy code
 
 ---
 
@@ -125,15 +90,9 @@ Copy code
 
 uv pip install onnx onnxsim onnxscript
 
-shell
-Copy code
-
 ### Export the model:
 
 python export_to_onnx.py
-
-yaml
-Copy code
 
 ---
 
@@ -161,9 +120,6 @@ Modification-to-RF-DETR-model/
 └── datasets/
 ├── hail_1/
 └── wind_1/
-
-yaml
-Copy code
 
 ---
 
