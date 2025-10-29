@@ -86,7 +86,7 @@ cache/
 tmp/
 *.csv
 *.jsonl
-
+*.onnx
 # =========================
 # Images / Visualizations
 # =========================
