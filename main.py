@@ -7,7 +7,6 @@ import torch
 from rfdetr import RFDETRBase
 import warnings
 from PIL import Image
-
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
@@ -246,33 +245,42 @@ if __name__ == "__main__":
         # === Paths ===
         test_folder_path = args.path if args.path else "datasets/single_test"
         print(f"Testing on images from: {test_folder_path}")
-        checkpoint_path = "merged_annotations/output/checkpoint_best_ema.pth"
+        checkpoint_path = "merged_annotations/output/checkpoint.pth"
         model = RFDETRBase(
             num_classes=len(class_names),
             pretrain_weights=checkpoint_path
         )
-
+        # model = rfdetr
+        # print(
+        #     rfdetr.model.model.class_embed.bias.shape[0], "classes in model head")
         for img in Path(test_folder_path).glob("*.*"):
             if img.suffix.lower() not in [".jpg", ".jpeg", ".png"]:
                 continue
 
             if infer_mode == "normal":
+                path = test_folder_path.split('/')[-2:]
+                data_path = path[0]
+                type_path = path[1]
                 run_rfdetr_inference(
                     model=model,
                     image_path=str(img),
                     class_names=class_names,
-                    save_dir=f"run/{test_folder_path.split('/')[-2:]}_predictions"
+                    save_dir=f"run/{data_path}/{type_path}_predictions"
                 )
             else:
+                path = test_folder_path.split('/')[-2:]
+                data_path = path[0]
+                type_path = path[1]
                 run_rfdetr_inference_tiled(
                     model=model,
                     image_path=str(img),
                     class_names=class_names,
                     tile_size=tile_size,
-                    overlap=0.2,
-                    conf_thres=0.45,
-                    save_dir=f"run/{test_folder_path.split('/')[-2:]}_predictions_tiled"
+                    overlap=0.4,
+                    conf_thres=0.35,
+                    save_dir=f"run_tiled/{data_path}/{type_path}"
                 )
+
 
 # usage :
 # python main.py --mode test --infer_mode normal

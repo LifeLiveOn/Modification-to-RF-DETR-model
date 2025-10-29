@@ -34,13 +34,15 @@ import re
 import sys
 
 
-def run_command_shell(command, dry_run:bool = False) -> int:
+def run_command_shell(command, dry_run: bool = False) -> int:
     if dry_run:
         print("")
-        print(f"CUDA_VISIBLE_DEVICES={os.environ['CUDA_VISIBLE_DEVICES']} {command}")
+        print(
+            f"CUDA_VISIBLE_DEVICES={os.environ['CUDA_VISIBLE_DEVICES']} {command}")
         print("")
     try:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        result = subprocess.run(command, shell=True,
+                                capture_output=True, text=True)
         return result
     except subprocess.CalledProcessError as e:
         print(f"Command failed with exit code {e.returncode}")
@@ -50,7 +52,8 @@ def run_command_shell(command, dry_run:bool = False) -> int:
 
 def make_infer_image(infer_dir, shape, batch_size, device="cuda"):
     if infer_dir is None:
-        dummy = np.random.randint(0, 256, (shape[0], shape[1], 3), dtype=np.uint8)
+        dummy = np.random.randint(
+            0, 256, (shape[0], shape[1], 3), dtype=np.uint8)
         image = Image.fromarray(dummy, mode="RGB")
     else:
         image = Image.open(infer_dir).convert("RGB")
@@ -67,18 +70,20 @@ def make_infer_image(infer_dir, shape, batch_size, device="cuda"):
     inps = torch.stack([inps for _ in range(batch_size)])
     return inps
 
+
 def export_onnx(output_dir, model, input_names, input_tensors, output_names, dynamic_axes, backbone_only=False, verbose=True, opset_version=17):
     export_name = "backbone_model" if backbone_only else "inference_model"
     output_file = os.path.join(output_dir, f"{export_name}.onnx")
-    
+
     # Prepare model for export
     if hasattr(model, "export"):
         model.export()
-    
+
     torch.onnx.export(
         model,
         input_tensors,
         output_file,
+        dynamo=False,
         input_names=input_names,
         output_names=output_names,
         export_params=True,
@@ -92,24 +97,25 @@ def export_onnx(output_dir, model, input_names, input_tensors, output_names, dyn
     return output_file
 
 
-def onnx_simplify(onnx_dir:str, input_names, input_tensors, force=False):
+def onnx_simplify(onnx_dir: str, input_names, input_tensors, force=False):
     sim_onnx_dir = onnx_dir.replace(".onnx", ".sim.onnx")
     if os.path.isfile(sim_onnx_dir) and not force:
         return sim_onnx_dir
-    
+
     if isinstance(input_tensors, torch.Tensor):
         input_tensors = [input_tensors]
-    
+
     print(f'start simplify ONNX model: {onnx_dir}')
     opt = OnnxOptimizer(onnx_dir)
     opt.info('Model: original')
     opt.common_opt()
     opt.info('Model: optimized')
     opt.save_onnx(sim_onnx_dir)
-    input_dict = {name: tensor.detach().cpu().numpy() for name, tensor in zip(input_names, input_tensors)}
+    input_dict = {name: tensor.detach().cpu().numpy()
+                  for name, tensor in zip(input_names, input_tensors)}
     model_opt, check_ok = onnxsim.simplify(
         onnx_dir,
-        check_n = 3,
+        check_n=3,
         input_data=input_dict,
         dynamic_input_shape=False)
     if check_ok:
@@ -120,27 +126,27 @@ def onnx_simplify(onnx_dir:str, input_names, input_tensors, force=False):
     return sim_onnx_dir
 
 
-def trtexec(onnx_dir:str, args) -> None:
+def trtexec(onnx_dir: str, args) -> None:
     engine_dir = onnx_dir.replace(".onnx", f".engine")
-    
+
     # Base trtexec command
     trt_command = " ".join([
         "trtexec",
-            f"--onnx={onnx_dir}",
-            f"--saveEngine={engine_dir}",
-            f"--memPoolSize=workspace:4096 --fp16",
-            f"--useCudaGraph --useSpinWait --warmUp=500 --avgRuns=1000 --duration=10",
-            f"{'--verbose' if args.verbose else ''}"])
-    
+        f"--onnx={onnx_dir}",
+        f"--saveEngine={engine_dir}",
+        f"--memPoolSize=workspace:4096 --fp16",
+        f"--useCudaGraph --useSpinWait --warmUp=500 --avgRuns=1000 --duration=10",
+        f"{'--verbose' if args.verbose else ''}"])
+
     if args.profile:
         profile_dir = onnx_dir.replace(".onnx", f".nsys-rep")
         # Wrap with nsys profile command
         command = " ".join([
             "nsys profile",
-                f"--output={profile_dir}",
-                "--trace=cuda,nvtx",
-                "--force-overwrite true",
-                trt_command
+            f"--output={profile_dir}",
+            "--trace=cuda,nvtx",
+            "--force-overwrite true",
+            trt_command
         ])
         print(f'Profile data will be saved to: {profile_dir}')
     else:
@@ -148,6 +154,7 @@ def trtexec(onnx_dir:str, args) -> None:
 
     output = run_command_shell(command, args.dry_run)
     stats = parse_trtexec_output(output.stdout)
+
 
 def parse_trtexec_output(output_text):
     print(output_text)
@@ -157,9 +164,9 @@ def parse_trtexec_output(output_text):
     d2h_pattern = r"Device to Host Transfer Time: min = (\d+\.\d+) ms, max = (\d+\.\d+) ms, mean = (\d+\.\d+) ms"
     latency_pattern = r"Latency: min = (\d+\.\d+) ms, max = (\d+\.\d+) ms, mean = (\d+\.\d+) ms"
     throughput_pattern = r"Throughput: (\d+\.\d+) qps"
-    
+
     stats = {}
-    
+
     # Extract compute times
     if match := re.search(gpu_compute_pattern, output_text):
         stats.update({
@@ -168,7 +175,7 @@ def parse_trtexec_output(output_text):
             'compute_mean_ms': float(match.group(3)),
             'compute_median_ms': float(match.group(4))
         })
-    
+
     # Extract H2D times
     if match := re.search(h2d_pattern, output_text):
         stats.update({
@@ -176,7 +183,7 @@ def parse_trtexec_output(output_text):
             'h2d_max_ms': float(match.group(2)),
             'h2d_mean_ms': float(match.group(3))
         })
-    
+
     # Extract D2H times
     if match := re.search(d2h_pattern, output_text):
         stats.update({
@@ -191,17 +198,20 @@ def parse_trtexec_output(output_text):
             'latency_max_ms': float(match.group(2)),
             'latency_mean_ms': float(match.group(3))
         })
-    
+
     # Extract throughput
     if match := re.search(throughput_pattern, output_text):
         stats['throughput_qps'] = float(match.group(1))
-    
+
     return stats
+
 
 def no_batch_norm(model):
     for module in model.modules():
         if isinstance(module, nn.BatchNorm2d):
-            raise ValueError("BatchNorm2d found in the model. Please remove it.")
+            raise ValueError(
+                "BatchNorm2d found in the model. Please remove it.")
+
 
 def main(args):
     print("git:\n  {}\n".format(utils.get_sha()))
@@ -231,11 +241,15 @@ def main(args):
     print(f"number of parameters: {n_parameters}")
     n_backbone_parameters = sum(p.numel() for p in model.backbone.parameters())
     print(f"number of backbone parameters: {n_backbone_parameters}")
-    n_projector_parameters = sum(p.numel() for p in model.backbone[0].projector.parameters())
+    n_projector_parameters = sum(p.numel()
+                                 for p in model.backbone[0].projector.parameters())
     print(f"number of projector parameters: {n_projector_parameters}")
-    n_backbone_encoder_parameters = sum(p.numel() for p in model.backbone[0].encoder.parameters())
-    print(f"number of backbone encoder parameters: {n_backbone_encoder_parameters}")
-    n_transformer_parameters = sum(p.numel() for p in model.transformer.parameters())
+    n_backbone_encoder_parameters = sum(
+        p.numel() for p in model.backbone[0].encoder.parameters())
+    print(
+        f"number of backbone encoder parameters: {n_backbone_encoder_parameters}")
+    n_transformer_parameters = sum(p.numel()
+                                   for p in model.transformer.parameters())
     print(f"number of transformer parameters: {n_transformer_parameters}")
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu')
@@ -263,20 +277,23 @@ def main(args):
             dets = outputs['pred_boxes']
             labels = outputs['pred_logits']
             masks = outputs['pred_masks']
-            print(f"PyTorch inference output shapes - Boxes: {dets.shape}, Labels: {labels.shape}, Masks: {masks.shape}")
+            print(
+                f"PyTorch inference output shapes - Boxes: {dets.shape}, Labels: {labels.shape}, Masks: {masks.shape}")
         else:
             outputs = model(input_tensors)
             dets = outputs['pred_boxes']
             labels = outputs['pred_logits']
-            print(f"PyTorch inference output shapes - Boxes: {dets.shape}, Labels: {labels.shape}")
+            print(
+                f"PyTorch inference output shapes - Boxes: {dets.shape}, Labels: {labels.shape}")
     model.cpu()
     input_tensors = input_tensors.cpu()
 
+    output_file = export_onnx(model, args, input_names,
+                              input_tensors, output_names, dynamic_axes)
 
-    output_file = export_onnx(model, args, input_names, input_tensors, output_names, dynamic_axes)
-    
     if args.simplify:
-        output_file = onnx_simplify(output_file, input_names, input_tensors, args)
+        output_file = onnx_simplify(
+            output_file, input_names, input_tensors, args)
 
     if args.tensorrt:
         output_file = trtexec(output_file, args)
