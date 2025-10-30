@@ -30,8 +30,8 @@ uv pip install -r requirements.txt
 
 ### Install local RF-DETR modifications
 
-cd rf-detr-modifications
-uv pip install -e .
+- cd rf-detr-modifications
+- uv pip install -e .
 
 ---
 
