@@ -177,7 +177,7 @@ cython_debug/
 
 # model artifacts
 rf-detr*
-!rf-detr.datasets/
+!datasets/
 output/*
 
 train_test.py
