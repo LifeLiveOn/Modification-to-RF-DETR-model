@@ -74,6 +74,7 @@ rf-detr-outputs/
 rf-detr-results/
 # Do NOT ignore your working dev folder
 !rf-detr-modifications/
+!rf-detr.datasets/
 
 # =========================
 # Datasets / Generated Data
