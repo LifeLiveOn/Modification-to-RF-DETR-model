@@ -1,5 +1,0 @@
-*.onnx filter=lfs diff=lfs merge=lfs -text
-output/checkpoint.pth filter=lfs diff=lfs merge=lfs -text
-output/checkpoint_best_ema.pth filter=lfs diff=lfs merge=lfs -text
-merged_annotations/output/checkpoint.pth filter=lfs diff=lfs merge=lfs -text
-merged_annotations/output/checkpoint_best_ema.pth filter=lfs diff=lfs merge=lfs -text
