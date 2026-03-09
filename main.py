@@ -37,16 +37,19 @@ def run_training(
         dataset_dir=path_to_dataset,
         epochs=100,
         batch_size=8,
-        grad_accum_steps=4,
-        lr=1e-5,
+        grad_accum_steps=2,
+        lr=1e-4,
         num_workers=0,
         output_dir=output_dir,
         tensorboard=True,
         resume=resume_path,
-        seed=42,
+        seed=96,
         early_stopping=True,
-        early_stopping_patience=10,
+        early_stopping_patience=20,
         gradient_checkpointing=True,
+        use_ema=False,
+        # fp16_eval=True,
+        # position_embedding="RoPE"
     )
 
 
@@ -99,7 +102,7 @@ def run_rfdetr_inference_tiled(
     class_names=None,
     tile_size=640,
     overlap=0.2,
-    conf_thres=0.35,
+    conf_thres=0.5,
     save_dir="saved_predictions_tiled"
 ):
     """Run tiled (SAHI-style) inference for RF-DETR."""
@@ -220,13 +223,13 @@ if __name__ == "__main__":
     infer_mode = args.infer_mode
     tile_size = args.tile_size
     if tile_size == "tiny":
-        tile_size = 320
+        tile_size = 128
     elif tile_size == "small":
-        tile_size = 480
+        tile_size = 192
     elif tile_size == "normal":
-        tile_size = 640
+        tile_size = 256
     elif tile_size == "large":
-        tile_size = 800
+        tile_size = 512
     else:
         tile_size = 640
 
@@ -253,6 +256,8 @@ if __name__ == "__main__":
             num_classes=len(class_names),
             pretrain_weights=checkpoint_path
         )
+        # print model class head bias shape to confirm number of classes
+
         # model = rfdetr
         # print(
         #     rfdetr.model.model.class_embed.bias.shape[0], "classes in model head")

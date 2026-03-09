@@ -266,12 +266,12 @@ if __name__ == "__main__":
             image_dir=f"{folder}/{dt}/",
             anno_path=f"{folder}/{dt}/_annotations.coco.json",
             output_dir=f"{folder}_cropped/",
-            tile_size=640,
-            overlap=0,
+            tile_size=320,
+            overlap=0.2,
             visualize=True,
             data_type=dt,
             black_threshold=15,
             area_threshold=20*20,
             edge_threshold=5,
-            context_margin=0.4  # zoom crop margin (0.4 = 40%
+            context_margin=0.1  # zoom crop margin (0.4 = 40%
         )

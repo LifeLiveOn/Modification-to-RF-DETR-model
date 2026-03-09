@@ -38,7 +38,8 @@ print("Category distribution:", counts)
 
 hail1 = list(Path("datasets/hail_1_cropped/train").glob("*.jpg"))
 hail2 = list(Path("datasets/hail_2/train").glob("*.jpg"))
-print("hail_1:", len(hail1), "hail_2:", len(hail2))
+hail3 = list(Path("datasets/hail_3/train").glob("*.jpg"))
+print("hail_1:", len(hail1), "hail_2:", len(hail2), "hail_3:", len(hail3))
 
 
 areas = [a["bbox"][2]*a["bbox"][3] for a in data["annotations"]]

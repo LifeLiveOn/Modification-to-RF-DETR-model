@@ -119,12 +119,16 @@ if __name__ == "__main__":
     mode1 = ["train", "valid", "test"]
     prefix = "datasets"
     json_name = "_annotations.coco.json"
+    images_folder = ["hail_1_cropped", "hail_2", "hail_3", "wind_1"]
+
     try:
         for m in mode1:
-            list_json = [f"{prefix}/hail_1_cropped/{m}/{json_name}",
-                         f"{prefix}/hail_2/{m}/{json_name}", f"{prefix}/hail_3/{m}/{json_name}", f"{prefix}/wind_1/{m}/{json_name}"]
-            datasets_path = [f"{prefix}/hail_1_cropped/{m}",
-                             f"{prefix}/hail_2/{m}", f"{prefix}/hail_3/{m}", f"{prefix}/wind_1/{m}"]
+            # list_json = [f"{prefix}/hail_1_cropped/{m}/{json_name}",
+            #              f"{prefix}/hail_2/{m}/{json_name}", f"{prefix}/hail_3/{m}/{json_name}", f"{prefix}/wind_1/{m}/{json_name}"]
+            list_json = [
+                f"{prefix}/{folder}/{m}/{json_name}" for folder in images_folder]
+            datasets_path = [
+                f"{prefix}/{folder}/{m}" for folder in images_folder]
             output = f"merged_annotations/{m}/_annotations.coco.json"
             merge_coco_datasets(list_json, datasets_path, output)
     except Exception as e:

@@ -1,0 +1,23 @@
+path: merged_annotations/labels/
+
+train:
+  - datasets/hail_1_cropped/
+  - datasets/hail_2/
+  - datasets/hail_3/
+  - datasets/wind_1/
+
+val:
+  - datasets/hail_1_cropped/
+  - datasets/hail_2/
+  - datasets/hail_3/
+  - datasets/wind_1/
+
+test:
+  - datasets/hail_1_cropped/
+  - datasets/hail_2/
+  - datasets/hail_3/
+  - datasets/wind_1/
+
+names:
+0: hail
+1: wind

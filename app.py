@@ -85,6 +85,7 @@ def load_model():
             model = RFDETRBase(num_classes=2, device=device)
             model.model.model = core_onnx
             print(f"[INFO] Loaded ONNX model from {onnx_path}")
+            # print("ONNX CLASS shape", core_onnx.class_head_bias.shape)
         except Exception as e:
             print(f"[WARNING] Failed to load ONNX model: {e}")
             model = None
@@ -150,7 +151,7 @@ tile_size_option = st.sidebar.selectbox(
 )
 
 tile_size_map = {
-    "tiny": 224,
+    "tiny": 128,
     "small": 448,
     "normal": 560,
     "large": 616,
